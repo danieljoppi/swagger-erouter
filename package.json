@@ -1,0 +1,38 @@
+{
+  "name": "swagger-erouter",
+  "version": "1.0.0",
+  "description": "Proxy to Express Route and use Swagger to validate paths and include CORS",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danieljoppi/swagger-erouter.git"
+  },
+  "keywords": [
+    "proxy",
+    "router",
+    "express",
+    "swagger",
+    "cors",
+    "validate",
+    "path",
+    "route"
+  ],
+  "author": "Daniel Joppi <daniel.joppi@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/danieljoppi/swagger-erouter/issues"
+  },
+  "homepage": "https://github.com/danieljoppi/swagger-erouter#readme",
+  "dependencies": {
+    "cors": "^2.8.1",
+    "path-to-regexp": "^1.5.3",
+    "swagger-parameters": "^1.3.1"
+  },
+  "optionalDependencies": {
+    "express": "^4.14.0",
+    "methods": "^1.1.2"
+  }
+}
