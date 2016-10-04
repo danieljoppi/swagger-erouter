@@ -90,7 +90,7 @@ module.exports = (swagger = {}) => {
 
             if (re.exec(path) && swMethods[l_method]) {
                 swMethod = swMethods[l_method];
-                setDefaultCors({route, path, swMethod}, apiCaches[i]);
+                setDefaultCors({route, path}, apiCaches[i]);
                 break;
             }
         }
@@ -98,23 +98,36 @@ module.exports = (swagger = {}) => {
         if (!swMethod) {
             throw new Error(`[Method: "${method.toUpperCase()}"] API not defined in Swagger: "${path}"`);
         }
+
+        if (!swMethod.parameters) swMethod.parameters = [];
+        for (let i=0, len=swMethod.parameters.length; i<len; i++) {
+            let param = swMethod.parameters[i];
+            if (!param.$ref) continue;
+            let match = /#\/(\w*)\/(\w*)/.exec(param.$ref);
+            if (!match || match.length < 3) {
+                throw new Error(`[Method: "${method.toUpperCase()}"] Invalid parameter $ref: "${param.$ref}"`);
+            }
+            swMethod.parameters[i] = swagger[match[1]][match[2]];
+        }
+
         return swMethod;
     }
 
-    function setDefaultCors({route, path, swMethod}, apiCache) {
+    function setDefaultCors({route, path}, apiCache) {
         if (!apiCache || apiCache.defineCors) return;
 
+        const swMethods = apiCache.swMethods;
         apiCache.defineCors = true;
 
-        route.options.apply(route, [corsMw(path, swMethod)]);
-        let allowedList = Object.keys(swMethod).join(', '),
-            defineMethods = Object.keys(apiCache.swMethods);
+        route.options.apply(route, [corsMw(path, swMethods)]);
+        let allowedList = Object.keys(swMethods),
+            defineMethods = allowedList.concat(['all', 'options']);
 
         for (let m= 0, len=allMethods.length; m<len; m++) {
             let method = allMethods[m],
                 origMethod = `__${method}`,
                 l_method = method.toLowerCase();
-            if (~defineMethods.indexOf(l_method) || 'options' === l_method) continue;
+            if (~defineMethods.indexOf(l_method)) continue;
 
             if (route[origMethod]) {
                 route[method] = route[origMethod];
@@ -122,9 +135,9 @@ module.exports = (swagger = {}) => {
             }
 
             route[method].apply(route, [
-                corsMw(path, swMethod),
+                corsMw(path, swMethods),
                 (req, res) => {
-                    res.status(405).send(`${req.path} does not allow ${req.method}.\nAllowed methods: ${allowedList}`);
+                    res.status(405).send(`${req.path} does not allow ${req.method}.\nAllowed methods: ${allowedList.join().toUpperCase()}`);
                 }
             ]);
         }
