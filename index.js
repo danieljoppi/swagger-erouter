@@ -51,7 +51,7 @@ module.exports = (swagger = {}) => {
                 swMethod = validateSwaggerMethod(path, method, route);
             let middlewares = [
                     corsMw(path, swMethod),
-                    validatorMw(swMethod),
+                    validatorMw(swMethod, swagger),
                     ...Array.prototype.slice.call(arguments, 1)
                 ];
             route[method].apply(route, middlewares);
@@ -70,7 +70,7 @@ module.exports = (swagger = {}) => {
                 let swMethod = validateSwaggerMethod(path, method, this);
                 let middlewares = [
                     corsMw(path, swMethod),
-                    validatorMw(swMethod),
+                    validatorMw(swMethod, swagger),
                     ...Array.prototype.slice.call(arguments)
                 ];
 
@@ -82,6 +82,18 @@ module.exports = (swagger = {}) => {
 
     return app();
 
+    function resolveParameters(obj, msg) {
+        for (let i=0, len=obj.parameters.length; i<len; i++) {
+            let param = obj.parameters[i];
+            if (!param.$ref) continue;
+            let match = /#\/(\w*)\/(\w*)/.exec(param.$ref);
+            if (!match || match.length < 3) {
+                throw new Error(`[${msg}] Invalid parameter $ref: "${param.$ref}"`);
+            }
+            obj.parameters[i] = swagger[match[1]][match[2]];
+        }
+    }
+
     function validateSwaggerMethod(path, method, route) {
         let swMethod = false;
         for (let i=0, total=apiCaches.length; i<total; i++) {
@@ -90,6 +102,13 @@ module.exports = (swagger = {}) => {
 
             if (re.exec(path) && swMethods[l_method]) {
                 swMethod = swMethods[l_method];
+                if (!swMethod.parameters) {
+                    swMethod.parameters = [];
+                }
+
+                if (swMethods.parameters) {
+                    swMethod.parameters.push(...swMethods.parameters);
+                }
                 setDefaultCors({route, path}, apiCaches[i]);
                 break;
             }
@@ -99,16 +118,8 @@ module.exports = (swagger = {}) => {
             throw new Error(`[Method: "${method.toUpperCase()}"] API not defined in Swagger: "${path}"`);
         }
 
-        if (!swMethod.parameters) swMethod.parameters = [];
-        for (let i=0, len=swMethod.parameters.length; i<len; i++) {
-            let param = swMethod.parameters[i];
-            if (!param.$ref) continue;
-            let match = /#\/(\w*)\/(\w*)/.exec(param.$ref);
-            if (!match || match.length < 3) {
-                throw new Error(`[Method: "${method.toUpperCase()}"] Invalid parameter $ref: "${param.$ref}"`);
-            }
-            swMethod.parameters[i] = swagger[match[1]][match[2]];
-        }
+        // resolve parameters
+        resolveParameters(swMethod, `Method: "${method.toUpperCase()}"`);
 
         return swMethod;
     }
