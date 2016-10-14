@@ -1,13 +1,5 @@
 'use strict';
-//const $methods = require('methods');
-const $methods = [
-    'get',
-    'post',
-    'put',
-    'head',
-    'delete',
-    'patch'
-];
+const $methods = require('./commons/methods');
 const express = require('express');
 const pathToRegexp = require('path-to-regexp');
 
@@ -37,7 +29,7 @@ module.exports = (swagger = {}) => {
         apiCaches.push({
             path: s_path,
             swMethods,
-            re: pathToRegexp(s_path)
+            re: pathToRegexp(cleanPath(s_path))
         });
     }
 
@@ -48,12 +40,13 @@ module.exports = (swagger = {}) => {
 
         app[method] = function(path) {
             let route = this.route(path),
-                swMethod = validateSwaggerMethod(path, method, route);
+                validations = validateSwaggerMethod(path, method, route);
+
             let middlewares = [
-                    corsMw(path, swMethod),
-                    validatorMw(swMethod, swagger),
-                    ...Array.prototype.slice.call(arguments, 1)
-                ];
+                corsMw(path, validations[0].swMethod),
+                routerValidation(validations),
+                ...Array.prototype.slice.call(arguments, 1)
+            ];
             route[method].apply(route, middlewares);
             return this;
         };
@@ -67,10 +60,10 @@ module.exports = (swagger = {}) => {
                 origMethod = `__${method}`;
             route[origMethod] = route[method];
             route[method] = function () {
-                let swMethod = validateSwaggerMethod(path, method, this);
+                let validations = validateSwaggerMethod(path, method, this);
                 let middlewares = [
-                    corsMw(path, swMethod),
-                    validatorMw(swMethod, swagger),
+                    corsMw(path, validations[0].swMethod),
+                    routerValidation(validations),
                     ...Array.prototype.slice.call(arguments)
                 ];
 
@@ -94,14 +87,62 @@ module.exports = (swagger = {}) => {
         }
     }
 
-    function validateSwaggerMethod(path, method, route) {
-        let swMethod = false;
-        for (let i=0, total=apiCaches.length; i<total; i++) {
-            let {re, swMethods} = apiCaches[i],
-                l_method = method.toLowerCase();
+    function routerValidation(validations) {
+        for (let h= 0, total=validations.length; h<total; h++) {
+            let valid = validations[h];
+            valid.validatorMw = validatorMw(valid.swMethod, swagger);
+        }
+        if (validations.length === 1) {
+            return validations[0].validatorMw;
+        }
 
-            if (re.exec(path) && swMethods[l_method]) {
-                swMethod = swMethods[l_method];
+        let validationsRules = swagger['x-swagger-erouter-validation-rules'] || {},
+            pathsRules = Object.keys(validationsRules),
+            path = cleanPath(validations[0].path);
+        //console.log('$###>>>', validations[0].path, '---', path, pathsRules);
+        for (let i= 0, len=pathsRules.length; i<len; i++) {
+            let pathRule = pathsRules[i],
+                re = pathToRegexp(pathRule.replace(/\{(\w+)\}/g, ':$1'));
+
+            //console.log(path, '==>>', pathRule, re.test(path), validations[0].path);
+            if (re.test(path)) {
+                let validRules = validationsRules[pathRule],
+                    $in = validRules.in,
+                    $name = validRules.name,
+                    $rules = validRules.rules;
+
+                return (req, res, next) => {
+                    let value = ($in === 'header') ? req.get($name) :
+                        (~['param', 'path'].indexOf($in)) ? req.params[$name]:
+                        req[$in] && req[$in][$name];
+
+                    let refPath = $rules[value] || $rules.default,
+                        refRe = pathToRegexp(refPath.replace(/\{(\w+)\}/g, ':$1'));
+                    for (let h= 0, total=validations.length; h<total; h++) {
+                        let valid = validations[h];
+                        //console.log(':::>>>>', value, '>>', valid.path, '-->', refPath, refRe.test(valid.path.replace(/\/?\?/, '/?')));
+                        if (refRe.test(valid.path.replace(/\/?\?/, '/?'))) {
+                            return valid.validatorMw(req, res, next);
+                        }
+                    }
+
+                    return next(new Error(`"Swagger Router Validation Rules" not found of "${path}"`));
+                };
+            }
+        }
+        return (req, res, next) => next(new Error('"Swagger Router Validation Rules" not found'));
+    }
+
+    function validateSwaggerMethod(path, method, route) {
+        const results = [];
+        for (let i=0, total=apiCaches.length; i<total; i++) {
+            let apiCache = apiCaches[i],
+                {re, swMethods} = apiCache,
+                l_method = method.toLowerCase(),
+                l_path = cleanPath(path);
+
+            if (re.test(l_path) && swMethods[l_method]) {
+                let swMethod = swMethods[l_method];
                 if (!swMethod.parameters) {
                     swMethod.parameters = [];
                 }
@@ -110,18 +151,25 @@ module.exports = (swagger = {}) => {
                     swMethod.parameters.push(...swMethods.parameters);
                 }
                 setDefaultCors({route, path}, apiCaches[i]);
-                break;
+                results.push({path: apiCache.path, swMethod});
             }
         }
 
-        if (!swMethod) {
+        if (!results.length) {
             throw new Error(`[Method: "${method.toUpperCase()}"] API not defined in Swagger: "${path}"`);
         }
 
-        // resolve parameters
-        resolveParameters(swMethod, `Method: "${method.toUpperCase()}"`);
+        for (let i= 0, len=results.length; i<len; i++) {
+            let result = results[i];
+            // resolve parameters
+            resolveParameters(result.swMethod, `Method: "${method.toUpperCase()}"`);
+        }
 
-        return swMethod;
+        return results;
+    }
+
+    function cleanPath(path) {
+        return path.replace(/\?\w*/, '').replace(/\/?$/, '/');
     }
 
     function setDefaultCors({route, path}, apiCache) {
