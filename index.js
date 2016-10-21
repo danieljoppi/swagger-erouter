@@ -111,12 +111,26 @@ module.exports = (swagger = {}) => {
                     $name = validRules.name,
                     $rules = validRules.rules;
 
+                const getObjValue = (obj, prop) => {
+                    if (!obj || !prop) return null;
+
+                    let ss = prop.split('.');
+                    if (ss.length === 1) {
+                        return obj[prop];
+                    }
+                    return ss.reduce((a, b) => {
+                        if ('string' === typeof a) {
+                            a = obj[a]
+                        }
+                        return a && a[b];
+                    });
+                };
                 return (req, res, next) => {
                     let value = ($in === 'header') ? req.get($name) :
                         (~['param', 'path'].indexOf($in)) ? req.params[$name]:
-                        req[$in] && req[$in][$name];
+                        getObjValue(req[$in], $name);
 
-                    let refPath = $rules[value] || $rules.default,
+                    let refPath = $rules[value] || $rules._default,
                         refRe = pathToRegexp(refPath.replace(/\{(\w+)\}/g, ':$1'));
                     for (let h= 0, total=validations.length; h<total; h++) {
                         let valid = validations[h];
