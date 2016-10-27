@@ -13,6 +13,9 @@ const validatorMw = require('./lib/validator-middleware');
  */
 module.exports = (swagger = {}) => {
     const app = express.Router;
+    if (app.__swagger_erouter__) {
+        return app();
+    }
 
     const paths = Object.keys(swagger.paths || {});
     const apiCaches = [];
@@ -72,6 +75,7 @@ module.exports = (swagger = {}) => {
         }
         return route;
     };
+    app.__swagger_erouter__ = true;
 
     return app();
 
@@ -99,7 +103,7 @@ module.exports = (swagger = {}) => {
         let validationsRules = swagger['x-swagger-erouter-validation-rules'] || {},
             pathsRules = Object.keys(validationsRules),
             path = cleanPath(validations[0].path);
-        //console.log('$###>>>', validations[0].path, '---', path, pathsRules);
+        console.log('$###>>>', validations[0].path, '---', path, pathsRules);
         for (let i= 0, len=pathsRules.length; i<len; i++) {
             let pathRule = pathsRules[i],
                 re = pathToRegexp(pathRule.replace(/\{(\w+)\}/g, ':$1'));
