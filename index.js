@@ -103,7 +103,7 @@ module.exports = (swagger = {}) => {
         let validationsRules = swagger['x-swagger-erouter-validation-rules'] || {},
             pathsRules = Object.keys(validationsRules),
             path = cleanPath(validations[0].path);
-        console.log('$###>>>', validations[0].path, '---', path, pathsRules);
+        //console.log('$###>>>', validations[0].path, '---', path, pathsRules);
         for (let i= 0, len=pathsRules.length; i<len; i++) {
             let pathRule = pathsRules[i],
                 re = pathToRegexp(pathRule.replace(/\{(\w+)\}/g, ':$1'));
@@ -112,7 +112,7 @@ module.exports = (swagger = {}) => {
             if (re.test(path)) {
                 let validRules = validationsRules[pathRule],
                     $in = validRules.in,
-                    $name = validRules.name,
+                    $field = validRules.field,
                     $rules = validRules.rules;
 
                 const getObjValue = (obj, prop) => {
@@ -130,11 +130,7 @@ module.exports = (swagger = {}) => {
                     });
                 };
                 return (req, res, next) => {
-                    let value = ($in === 'header') ? req.get($name) :
-                        (~['param', 'path'].indexOf($in)) ? req.params[$name]:
-                        getObjValue(req[$in], $name);
-
-                    let refPath = $rules[value] || $rules._default,
+                    let refPath = resolveField($in, $field, $rules),
                         refRe = pathToRegexp(refPath.replace(/\{(\w+)\}/g, ':$1'));
                     for (let h= 0, total=validations.length; h<total; h++) {
                         let valid = validations[h];
@@ -145,6 +141,20 @@ module.exports = (swagger = {}) => {
                     }
 
                     return next(new Error(`"Swagger Router Validation Rules" not found of "${path}"`));
+
+                    function resolveField(_in, _field, _rules) {
+                        let value = (_in === 'header') ? req.get(_field) :
+                            (~['param', 'path'].indexOf(_in)) ? req.params[_field]:
+                                getObjValue(req[_in], _field);
+
+                        let refPath = _rules[value] || _rules._default;
+                        if ('string' === typeof refPath) {
+                            return refPath;
+                        } else {
+                            let o = refPath;
+                            return resolveField(o.in || _in, o.field || _field, o.rules || _rules);
+                        }
+                    }
                 };
             }
         }
@@ -159,6 +169,7 @@ module.exports = (swagger = {}) => {
                 l_method = method.toLowerCase(),
                 l_path = cleanPath(path);
 
+            //console.log('--===>>>', apiCaches[i].path, '===', l_path, re.test(l_path));
             if (re.test(l_path) && swMethods[l_method]) {
                 let swMethod = swMethods[l_method];
                 if (!swMethod.parameters) {
@@ -187,7 +198,7 @@ module.exports = (swagger = {}) => {
     }
 
     function cleanPath(path) {
-        return path.replace(/\?\w*/, '').replace(/\/?$/, '/');
+        return path.replace(/\?[\w\-=+%$]*/, '').replace(/\/?$/, '/');
     }
 
     function setDefaultCors({route, path}, apiCache) {
